@@ -32,7 +32,7 @@ aside{flex:0 1 330px;display:flex;flex-direction:column;gap:12px;min-width:260px
 .ch.mark{background:#5a3d7a}.ch.wave small{color:var(--warn)}
 details{color:var(--mute);font-size:13px}
 </style></head><body>
-<header><h1>Achronal Chess</h1><div id="status"></div><button id="pass">Pass (freeze)</button><button id="new">New game</button></header>
+<header><h1>Achronal Chess</h1><small id="ver" style="color:var(--mute)"></small><div id="status"></div><button id="pass">Pass (freeze)</button><button id="new">New game</button></header>
 <main>
 <section id="boards">
  <div class="bw"><h3>Now <small id="nowNote"></small></h3><div class="board" id="bNow"></div></div>
@@ -51,7 +51,10 @@ details{color:var(--mute);font-size:13px}
 <script src="chess.js"></script>
 <script src="engine.js"></script>
 <script>
+const VERSION = 'v0.2.3 · 2026-10-30 10:59 PT';
 const A = Achronal, $ = id => document.getElementById(id);
+$('ver').textContent = VERSION + ' · chess.js ' + (typeof Chess === 'function' ? 'OK' : 'MISSING');
+window.addEventListener('error', e => { $('err').textContent = 'JS error: ' + e.message; });
 const GL = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
 const NAME = ['White', 'Black'];
 let G, sel = 0, pick = null, errMsg = '';
