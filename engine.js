@@ -78,8 +78,8 @@ function run(g) {
       const st = g.states[w.front];
       if (!legal(st.fen).length) { w.halted = true; e.steps = 0; break; }
       if (!isLegal(st.fen, st.move)) {
-        if (e.steps > 0) { g.interrupt = { index: w.front, actor: w.front % 2 }; ev(g, `Wave ${w.id} invalidated ply ${w.front + 1}: ${name(w.front % 2)} must answer now (interrupt)`); return; }
-        g.owed.push(w.front); ev(g, `Wave ${w.id} invalidated ply ${w.front + 1}: ${name(w.front % 2)} owes a response next turn`); e.steps = 0; break;
+        if (e.steps > 0) { g.interrupt = { index: w.front, actor: w.front % 2 }; ev(g, `Wave ${w.id} invalidated ply ${w.front}: ${name(w.front % 2)} must answer now (interrupt)`); return; }
+        g.owed.push(w.front); ev(g, `Wave ${w.id} invalidated ply ${w.front}: ${name(w.front % 2)} owes a response next turn`); e.steps = 0; break;
       }
     }
     if (w.front >= tip) { g.waves = g.waves.filter(x => x !== w); ev(g, `Wave ${w.id} reached the present`); }
@@ -131,7 +131,7 @@ function edit(g, p, j, m) {
   pay(g, p, c, g.cfg.transferEdit);
   g.states[j].move = m; g.edited = true; g.passes = 0;
   g.waves.push({ id: g.wid++, origin: j, front: j, halted: false });
-  g.log.push({ a: 'edit', p, j, m }); ev(g, `${name(p)} edits ply ${j + 1} (cost ${c / 100})`);
+  g.log.push({ a: 'edit', p, j, m }); ev(g, `${name(p)} edits ply ${j} (cost ${c / 100})`);
   if (g.frozen) begin(g, 'tick');
   return { ok: true };
 }
@@ -154,7 +154,7 @@ function respond(g, p, j, m) {
   if (!isLegal(s.fen, m) || same(m, s.move)) return err('ERR_ILLEGAL_MOVE');
   const c = Math.min(g.energy[p], cost(g, j));
   pay(g, p, c, g.cfg.transferResp);
-  s.move = m; g.log.push({ a: 'respond', p, j, m }); ev(g, `${name(p)} answers ply ${j + 1} (paid ${c / 100})`);
+  s.move = m; g.log.push({ a: 'respond', p, j, m }); ev(g, `${name(p)} answers ply ${j} (paid ${c / 100})`);
   if (forced) { g.interrupt = null; run(g); } else g.owed = g.owed.filter(x => x !== j);
   return { ok: true };
 }
@@ -169,23 +169,26 @@ function pass(g, p) {
 }
 
 /* ---- read-only views ---- */
-function ghost(fen, m) { // geometric move ignoring legality [A]
+const at = (fen, sq) => fen.split(' ')[0].split('/')[8 - sq[1]].replace(/\d/g, d => '.'.repeat(+d))[sq.charCodeAt(0) - 97];
+function ghost(fen, m, orig) { // geometric move ignoring legality [A]; a move whose piece is gone does nothing
   const rows = fen.split(' ')[0].split('/').map(r => r.replace(/\d/g, d => '.'.repeat(+d)).split(''));
-  const at = sq => [8 - sq[1], sq.charCodeAt(0) - 97];
-  const [fr, fc] = at(m.from), [tr, tc] = at(m.to), pc = rows[fr][fc];
-  if (pc !== '.') { rows[fr][fc] = '.'; rows[tr][tc] = m.promotion ? (pc === pc.toUpperCase() ? m.promotion.toUpperCase() : m.promotion) : pc; }
-  return rows.map(r => r.join('').replace(/\.+/g, d => d.length)).join('/') + ' w - - 0 1';
+  const pos = sq => [8 - sq[1], sq.charCodeAt(0) - 97];
+  const [fr, fc] = pos(m.from), [tr, tc] = pos(m.to), pc = rows[fr][fc];
+  if (pc === '.' || (orig && orig !== '.' && pc !== orig)) return { fen, noop: true };
+  rows[fr][fc] = '.'; rows[tr][tc] = m.promotion ? (pc === pc.toUpperCase() ? m.promotion.toUpperCase() : m.promotion) : pc;
+  return { fen: rows.map(r => r.join('').replace(/\.+/g, d => d.length)).join('/') + ' w - - 0 1', noop: false };
 }
-function projected(g, i) { // {fen, approx}: position once all waves not yet at i have arrived
+function projected(g, i) { // {fen, approx, noops}: position once all waves not yet at i have arrived
   const fronts = g.waves.filter(w => w.front < i).map(w => w.front);
-  if (!fronts.length) return { fen: g.states[i].fen, approx: false };
-  let f = Math.min(...fronts), fen = g.states[f].fen, approx = false;
+  if (!fronts.length) return { fen: g.states[i].fen, approx: false, noops: [] };
+  let f = Math.min(...fronts), fen = g.states[f].fen, approx = false; const noops = [];
   for (let j = f; j < i; j++) {
     const m = g.states[j].move;
     if (!approx && isLegal(fen, m)) fen = apply(fen, m);
-    else { approx = true; fen = m ? ghost(fen, m) : fen; }
+    else if (m) { approx = true; const r = ghost(fen, m, at(g.states[j].fen, m.from)); fen = r.fen; if (r.noop) noops.push(j); }
+    else approx = true;
   }
-  return { fen, approx };
+  return { fen, approx, noops };
 }
 function replay(cfg, log) {
   const g = newGame(cfg);

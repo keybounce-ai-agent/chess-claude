@@ -54,3 +54,18 @@ for (let seed = 1; seed <= 40; seed++) {
   if (JSON.stringify(rep.states) !== JSON.stringify(g.states) || JSON.stringify(rep.energy) !== JSON.stringify(g.energy)) { fails++; console.log('replay mismatch seed', seed); }
 }
 console.log({ games, ended, stuck, fails });
+
+// ghost regression: a move whose piece was captured must do nothing (not move the capturer)
+{
+  const g = A.newGame();
+  const f5 = 'rnbqkb1r/pppp1p1p/5np1/4p2Q/3PP3/8/PPP2PPP/RNB1KBNR b KQkq - 0 1';
+  const f6 = 'rnbqk2r/pppp1pbp/5np1/4p2Q/3PP3/8/PPP2PPP/RNB1KBNR w KQkq - 0 1';
+  const f7 = 'rnbqk2r/pppp1pbp/5np1/4p1Q1/3PP3/8/PPP2PPP/RNB1KBNR b KQkq - 0 1';
+  const d = { fen: f5, move: null };
+  g.states = [d, d, d, d, d, { fen: f5, move: mv('f6', 'h5') }, { fen: f6, move: mv('h5', 'g5') }, { fen: f7, move: null }];
+  g.waves = [{ id: 1, origin: 5, front: 5, halted: false }];
+  const p = A.projected(g, 7), row = p.fen.split(' ')[0].split('/');
+  console.log('ghost proj', p.fen.split(' ')[0], 'noops', p.noops);
+  ok(row[3].includes('n') && !p.fen.split(' ')[0].includes('Q') && row[3] === '4p2n'.replace('4p2n','4p2n') && p.noops.join() === '6', 'ghost keeps knight on h5, queen gone, ply 6 is a no-op');
+}
+console.log('fails', fails);

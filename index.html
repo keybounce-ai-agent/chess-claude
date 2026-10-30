@@ -45,13 +45,16 @@ details{color:var(--mute);font-size:13px}
  <div class="card"><h3>Events</h3><div id="log"></div></div>
  <details class="card"><summary>How to play</summary>
   <p>Select a ply in the timeline, then move on the <b>Now</b> board. The newest ply is the present move. Your own earlier plies (dashed outline) can be edited for energy equal to your turns back. An edit sends a timewave forward, 3 plies per turn, recomputing each position. A recorded move that becomes illegal must be replaced by its owner. Red squares show where Now and Projected differ. Hot-seat: both players share this screen.</p></details>
+<details class="card" id="xp"><summary>Export / import game</summary>
+  <textarea id="out" rows="8" style="width:100%;margin-top:6px;background:#0c0e12;color:var(--ink);font:11px monospace" placeholder="Export fills this. To replay a game, paste an export here and press Import."></textarea>
+  <button id="exp">Export (copy)</button> <button id="imp">Import</button></details>
 </aside>
 <div id="tl"></div>
 </main>
 <script src="chess.js"></script>
 <script src="engine.js"></script>
 <script>
-const VERSION = 'v0.2.3 · 2026-10-30 10:59 PT';
+const VERSION = 'v0.2.4 · 2026-10-30 11:40 PT';
 const A = Achronal, $ = id => document.getElementById(id);
 $('ver').textContent = VERSION + ' · chess.js ' + (typeof Chess === 'function' ? 'OK' : 'MISSING');
 window.addEventListener('error', e => { $('err').textContent = 'JS error: ' + e.message; });
@@ -155,5 +158,11 @@ function render() {
 function afterAction() { const f = forcedSel(); if (f !== null) sel = f; if (sel > tip()) sel = tip(); }
 $('pass').onclick = () => { const r = A.pass(G, actor()); errMsg = r.ok ? '' : (err[r.err] || r.err); afterAction(); render(); };
 $('new').onclick = () => { G = A.newGame(); sel = 0; pick = null; errMsg = ''; render(); };
+function exportText() {
+  const tl = G.states.slice(0, tip()).map((s, i) => i + ' ' + 'WB'[i % 2] + ' ' + san(i) + (G.owed.includes(i) ? ' [OWED]' : ''));
+  return JSON.stringify({ version: VERSION, config: G.cfg, actions: G.log, timeline: tl, energy: G.energy, waves: G.waves, owed: G.owed, interrupt: G.interrupt, frozen: G.frozen, marks: G.marks, selectedPly: sel, events: G.events }, null, 1);
+}
+$('exp').onclick = () => { const t = exportText(); $('out').value = t; $('xp').open = true; try { navigator.clipboard.writeText(t).then(() => { errMsg = 'Export copied to clipboard.'; render(); }, () => {}); } catch (e) {} };
+$('imp').onclick = () => { try { const o = JSON.parse($('out').value); G = A.replay(o.config, o.actions); sel = tip(); pick = null; errMsg = 'Imported ' + o.actions.length + ' actions.'; } catch (e) { errMsg = 'Import failed: ' + e.message; } afterAction(); render(); };
 G = A.newGame(); render();
 </script></body></html>
