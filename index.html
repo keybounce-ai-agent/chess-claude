@@ -1,0 +1,156 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Achronal Chess</title>
+<style>
+:root{--bg:#14171c;--panel:#1e232b;--ink:#e6e9ee;--mute:#8a93a1;--lt:#c9b79c;--dk:#8b6f55;--acc:#5ec4b6;--bad:#ff6b6b;--warn:#ffc857}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.4 system-ui,sans-serif}
+header{display:flex;gap:12px;align-items:center;flex-wrap:wrap;padding:10px 16px;background:var(--panel)}
+h1{font-size:18px;margin:0;color:var(--acc)}#status{flex:1;font-weight:600}
+button{background:#2b3340;color:var(--ink);border:1px solid #3a4454;border-radius:6px;padding:6px 12px;cursor:pointer}
+button:hover{background:#364052}
+main{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-start}
+#boards{display:flex;flex-wrap:wrap;gap:16px;flex:1 1 640px}.bw{flex:1 1 280px;max-width:420px}
+h3{margin:0 0 6px;font-size:13px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+.board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1;border:2px solid #000;user-select:none}
+.sq{display:flex;align-items:center;justify-content:center;font-size:min(7vw,40px);cursor:pointer;position:relative;line-height:1}
+.l{background:var(--lt)}.d{background:var(--dk)}
+.sq.last{box-shadow:inset 0 0 0 3px rgba(94,196,182,.8)}.sq.pick{box-shadow:inset 0 0 0 4px var(--warn)}
+.sq.diff{background-image:linear-gradient(rgba(255,107,107,.45),rgba(255,107,107,.45))}
+.sq.tgt::after{content:"";width:28%;height:28%;border-radius:50%;background:rgba(0,0,0,.35);position:absolute}
+.w{color:#fff;text-shadow:0 0 2px #000,0 0 2px #000,0 0 3px #000}.b{color:#111}
+aside{flex:0 1 330px;display:flex;flex-direction:column;gap:12px;min-width:260px}
+.card{background:var(--panel);border-radius:8px;padding:10px 12px}
+.meter{display:flex;align-items:center;gap:8px;margin:4px 0}.meter span{width:56px;color:var(--mute)}
+.bar{flex:1;height:12px;background:#0c0e12;border-radius:6px;overflow:hidden}.bar i{display:block;height:100%;background:var(--acc)}
+#hint{color:var(--warn);min-height:3.2em}#err{color:var(--bad);min-height:1.4em}
+#log{max-height:200px;overflow:auto;font-size:13px;color:var(--mute)}#log div{padding:1px 0}
+#tl{flex:1 1 100%;display:flex;gap:4px;overflow-x:auto;padding-bottom:8px}
+.ch{flex:0 0 auto;padding:4px 8px;border-radius:6px;background:#2b3340;border:2px solid transparent;cursor:pointer;font-size:13px;text-align:center}
+.ch small{display:block;color:var(--mute);font-size:10px}.ch.bk{background:#3a3f4a}
+.ch.mine{outline:1px dashed var(--acc)}.ch.sel{border-color:var(--warn)}.ch.bad{background:#6b2a2a}.ch.tip{border-color:var(--acc)}
+.ch.mark{background:#5a3d7a}.ch.wave small{color:var(--warn)}
+details{color:var(--mute);font-size:13px}
+</style></head><body>
+<header><h1>Achronal Chess</h1><div id="status"></div><button id="pass">Pass (freeze)</button><button id="new">New game</button></header>
+<main>
+<section id="boards">
+ <div class="bw"><h3>Now <small id="nowNote"></small></h3><div class="board" id="bNow"></div></div>
+ <div class="bw"><h3>Projected <small id="projNote"></small></h3><div class="board" id="bProj"></div></div>
+</section>
+<aside>
+ <div class="card"><div class="meter"><span>White</span><div class="bar"><i id="e0"></i></div><b id="t0"></b></div>
+ <div class="meter"><span>Black</span><div class="bar"><i id="e1"></i></div><b id="t1"></b></div></div>
+ <div class="card"><div id="hint"></div><div id="err"></div></div>
+ <div class="card"><h3>Events</h3><div id="log"></div></div>
+ <details class="card"><summary>How to play</summary>
+  <p>Select a ply in the timeline, then move on the <b>Now</b> board. The newest ply is the present move. Your own earlier plies (dashed outline) can be edited for energy equal to your turns back. An edit sends a timewave forward, 3 plies per turn, recomputing each position. A recorded move that becomes illegal must be replaced by its owner. Red squares show where Now and Projected differ. Hot-seat: both players share this screen.</p></details>
+</aside>
+<div id="tl"></div>
+</main>
+<script src="chess.js"></script>
+<script src="engine.js"></script>
+<script>
+const A = Achronal, $ = id => document.getElementById(id);
+const GL = { k: '♚', q: '♛', r: '♜', b: '♝', n: '♞', p: '♟' };
+const NAME = ['White', 'Black'];
+let G, sel = 0, pick = null, errMsg = '';
+
+function bmap(fen) {
+  const m = {}; fen.split(' ')[0].split('/').forEach((row, r) => { let c = 0;
+    for (const ch of row) { if (/\d/.test(ch)) c += +ch; else { m[String.fromCharCode(97 + c) + (8 - r)] = ch; c++; } } });
+  return m;
+}
+const tip = () => G.states.length - 1;
+const actor = () => (G.interrupt ? G.interrupt.actor : G.actor);
+const pts = e => +(e / 100).toFixed(2);
+const err = { ERR_NOT_YOUR_PLY: 'You can only edit your own colour\'s plies.', ERR_INSUFFICIENT_ENERGY: 'Not enough chrono-energy for that edit.',
+  ERR_EDIT_LIMIT: 'Only one optional edit per turn.', ERR_RESPONSES_OWED: 'Answer the owed/interrupt response first.', ERR_ILLEGAL_MOVE: 'Not legal on this board (or same as recorded move).',
+  ERR_EDIT_AT_OR_AFTER_FROZEN: 'During a freeze you can only edit plies before the frozen board.', ERR_EDIT_PENDING_INDEX: 'That ply has a pending response; answer it instead.',
+  ERR_PASS_NOT_ALLOWED: 'You cannot pass right now.', ERR_FROZEN: 'The present is frozen: edit the past or pass.', ERR_NOT_YOUR_TURN: 'Not your turn.', ERR_GAME_OVER: 'Game over.' };
+
+function san(i) {
+  const s = G.states[i]; if (!s.move) return '';
+  const c = new Chess(); c.load(s.fen); const r = c.move({ from: s.move.from, to: s.move.to, promotion: s.move.promotion });
+  return r ? r.san : s.move.from + s.move.to + '✗';
+}
+function forcedSel() {
+  if (G.interrupt) return G.interrupt.index;
+  const o = G.owed.find(j => j % 2 === G.actor); return o === undefined ? null : o;
+}
+function intent() { // what a move on the selected ply means
+  if (G.over) return null;
+  const a = actor(), f = forcedSel();
+  if (f !== null) return sel === f ? { kind: 'respond', c: Math.min(G.energy[a], A.cost(G, sel)) } : { kind: 'blocked', why: 'Select the highlighted red ply and answer it first.' };
+  if (G.frozen && G.marks.length && sel >= G.marks[0].index) return { kind: 'blocked', why: 'Frozen: edit a ply before the frozen board (purple), or pass.' };
+  if (G.extra) { if (sel < tip() && sel % 2 === a) return { kind: 'edit', c: A.cost(G, sel) }; return { kind: 'blocked', why: 'Extra tick: edit your own earlier ply or pass.' }; }
+  if (sel === tip() && !G.frozen) return { kind: 'present' };
+  if (sel < tip() && sel % 2 === a) return { kind: 'edit', c: A.cost(G, sel) };
+  return { kind: 'blocked', why: sel === tip() ? 'The present is frozen.' : 'That ply belongs to ' + NAME[sel % 2] + '; you may only edit your own.' };
+}
+function doMove(m) {
+  const a = actor(), it = intent(); let r;
+  if (!it || it.kind === 'blocked') { errMsg = it ? it.why : ''; return; }
+  if (it.kind === 'present') r = A.present(G, a, m); else if (it.kind === 'edit') r = A.edit(G, a, sel, m); else r = A.respond(G, a, sel, m);
+  errMsg = r.ok ? '' : (err[r.err] || r.err);
+  if (r.ok && it.kind === 'present') sel = tip();
+}
+function clickSq(sq) {
+  if (G.over) return;
+  const fen = G.states[sel].fen, mp = bmap(fen), turn = fen.split(' ')[1];
+  if (pick) {
+    const ms = A.legal(fen).filter(m => m.from === pick && m.to === sq);
+    if (ms.length) { const m = ms.find(x => x.promotion === 'q') || ms[0]; pick = null; doMove(m); afterAction(); return render(); }
+  }
+  pick = mp[sq] && (mp[sq] === mp[sq].toUpperCase()) === (turn === 'w') ? sq : null; render();
+}
+function drawBoard(el, fen, opts) {
+  const mp = bmap(fen), other = opts.other, lm = opts.last || [];
+  const tg = pick && opts.click ? A.legal(fen).filter(m => m.from === pick).map(m => m.to) : [];
+  el.innerHTML = '';
+  for (let r = 8; r >= 1; r--) for (let c = 0; c < 8; c++) {
+    const sq = String.fromCharCode(97 + c) + r, d = document.createElement('div'), p = mp[sq];
+    d.className = 'sq ' + ((r + c) % 2 ? 'l' : 'd') + (lm.includes(sq) ? ' last' : '') + (pick === sq && opts.click ? ' pick' : '') + (tg.includes(sq) ? ' tgt' : '') + (other && other[sq] !== p ? ' diff' : '');
+    if (p) { const s = document.createElement('span'); s.className = p === p.toUpperCase() ? 'w' : 'b'; s.textContent = GL[p.toLowerCase()] + '\uFE0E'; d.appendChild(s); }
+    if (opts.click) d.onclick = () => clickSq(sq);
+    el.appendChild(d);
+  }
+}
+function render() {
+  const t = tip(), a = actor(), st = G.states[sel], pj = A.projected(G, sel), it = intent();
+  const nowMap = bmap(st.fen), projMap = bmap(pj.fen);
+  drawBoard($('bNow'), st.fen, { click: true, other: projMap, last: st.move ? [st.move.from, st.move.to] : [] });
+  drawBoard($('bProj'), pj.fen, { other: nowMap });
+  $('nowNote').textContent = '(ply ' + sel + ')';
+  $('projNote').textContent = pj.approx ? '≈ approximate (ghost)' : (pj.fen === st.fen ? '= same as now' : 'after waves arrive');
+  let s;
+  if (G.over) s = G.over.winner === null ? 'Draw (' + G.over.kind + ') at ply ' + G.over.index : 'Checkmate at ply ' + G.over.index + ' — ' + NAME[G.over.winner] + ' wins';
+  else if (G.interrupt) s = '⚡ INTERRUPT — ' + NAME[a] + ' must answer ply ' + G.interrupt.index;
+  else if (G.frozen) s = '❄ FROZEN (' + (G.marks[0] ? G.marks[0].kind + ' at ply ' + G.marks[0].index : 'extra tick') + ') — ' + NAME[a] + ' to act';
+  else s = NAME[a] + ' to move' + (forcedSel() !== null ? ' — response owed' : '');
+  $('status').textContent = s;
+  $('pass').style.display = G.frozen && !G.over && !G.interrupt ? '' : 'none';
+  [0, 1].forEach(p => { $('e' + p).style.width = (100 * G.energy[p] / G.cfg.max[p]) + '%'; $('t' + p).textContent = pts(G.energy[p]) + '/' + pts(G.cfg.max[p]); });
+  let h = '';
+  if (it) h = it.kind === 'present' ? 'Make the present move (free). Waves in flight: ' + G.waves.length + '.'
+    : it.kind === 'edit' ? 'Editing ply ' + sel + ' costs ' + pts(it.c) + ' (you have ' + pts(G.energy[a]) + '). One edit per turn; then still make your present move.'
+    : it.kind === 'respond' ? 'Replace this invalid move. It costs ' + pts(it.c) + ' (all you have if short).' : it.why;
+  $('hint').textContent = h; $('err').textContent = errMsg;
+  $('log').innerHTML = G.events.slice(-30).reverse().map(e => '<div>' + e + '</div>').join('');
+  const fronts = new Map(G.waves.map(w => [w.front, w.id]));
+  $('tl').innerHTML = '';
+  for (let i = 0; i <= t; i++) {
+    const d = document.createElement('div'), m = G.marks.some(x => x.index === i);
+    d.className = 'ch' + (i % 2 ? ' bk' : '') + (i === sel ? ' sel' : '') + (i === t ? ' tip' : '') + (!G.over && i < t && i % 2 === a && forcedSel() === null ? ' mine' : '')
+      + (G.owed.includes(i) || (G.interrupt && G.interrupt.index === i) ? ' bad' : '') + (m ? ' mark' : '') + (fronts.has(i) ? ' wave' : '');
+    d.innerHTML = (i === t ? 'now' : (Math.floor(i / 2) + 1) + (i % 2 ? '…' : '.') + ' ' + san(i)) + '<small>' + (fronts.has(i) ? '🌊' + fronts.get(i) + ' ' : '') + (m ? '♚ ' : '') + 'ply ' + i + '</small>';
+    d.onclick = () => { sel = i; pick = null; errMsg = ''; render(); };
+    $('tl').appendChild(d);
+  }
+  if (G.over) { const ov = G.over.index; $('tl').querySelectorAll('.ch').forEach((c, i) => { if (i > ov) c.style.opacity = .35; }); }
+}
+function afterAction() { const f = forcedSel(); if (f !== null) sel = f; if (sel > tip()) sel = tip(); }
+$('pass').onclick = () => { const r = A.pass(G, actor()); errMsg = r.ok ? '' : (err[r.err] || r.err); afterAction(); render(); };
+$('new').onclick = () => { G = A.newGame(); sel = 0; pick = null; errMsg = ''; render(); };
+G = A.newGame(); render();
+</script></body></html>
