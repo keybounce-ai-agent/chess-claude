@@ -12,8 +12,8 @@ button:hover{background:#364052}
 main{display:flex;flex-wrap:wrap;gap:16px;padding:16px;align-items:flex-start}
 #boards{display:flex;flex-wrap:wrap;gap:16px;flex:1 1 640px}.bw{flex:1 1 280px;max-width:420px}
 h3{margin:0 0 6px;font-size:13px;color:var(--mute);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
-.board{display:grid;grid-template-columns:repeat(8,1fr);aspect-ratio:1;border:2px solid #000;user-select:none}
-.sq{display:flex;align-items:center;justify-content:center;font-size:min(7vw,40px);cursor:pointer;position:relative;line-height:1}
+.board{display:grid;grid-template-columns:repeat(8,minmax(0,1fr));border:2px solid #000;user-select:none;container-type:inline-size}
+.sq{aspect-ratio:1/1;min-width:0;overflow:hidden;display:flex;align-items:center;justify-content:center;font-size:min(7vw,40px);font-size:9.5cqw;cursor:pointer;position:relative;line-height:1}
 .l{background:var(--lt)}.d{background:var(--dk)}
 .sq.last{box-shadow:inset 0 0 0 3px rgba(94,196,182,.8)}.sq.pick{box-shadow:inset 0 0 0 4px var(--warn)}
 .sq.diff{background-image:linear-gradient(rgba(255,107,107,.45),rgba(255,107,107,.45))}
